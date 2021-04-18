@@ -17,11 +17,11 @@ use ZipArchive;
 class ImportDatabaseCommand extends Command
 {
     /** ローカルに保存したsakila-db.zipのパス */
-    const SAKILA_ZIP_PATH = TMP . 'sakila-db.zip';
+    private const SAKILA_ZIP_PATH = TMP . 'sakila-db.zip';
     /** 展開した際のsakila-data.sqlのパス */
-    const SAKILA_DATA_SQL_PATH = TMP . 'sakila-db' . DS . 'sakila-data.sql';
+    private const SAKILA_DATA_SQL_PATH = TMP . 'sakila-db' . DS . 'sakila-data.sql';
     /** 展開した際のsakila-schema.sqlのパス */
-    const SAKILA_SCHEMA_SQL_PATH = TMP . 'sakila-db' . DS . 'sakila-schema.sql';
+    private const SAKILA_SCHEMA_SQL_PATH = TMP . 'sakila-db' . DS . 'sakila-schema.sql';
 
     /**
      * Hook method for defining this command's option parser.
@@ -71,26 +71,36 @@ class ImportDatabaseCommand extends Command
         }
 
         // MySQLDBにインポート
-        $db_config = ConnectionManager::getConfig('default');
-        $cmd = "mysql -u {$db_config['username']} -p{$db_config['password']} -P {$db_config['port']} {$db_config['database']} < " . self::SAKILA_SCHEMA_SQL_PATH;
+        $dbConfig = ConnectionManager::getConfig('default');
+        $cmd = "mysql -u {$dbConfig['username']} -p{$dbConfig['password']} -P {$dbConfig['port']} ";
+        $cmd .= "{$dbConfig['database']} < " . self::SAKILA_SCHEMA_SQL_PATH;
         $io->out('exec ' . $cmd);
         exec($cmd);
-        $cmd = "mysql -u {$db_config['username']} -p{$db_config['password']} -P {$db_config['port']} {$db_config['database']} < " . self::SAKILA_DATA_SQL_PATH;
+        $cmd = "mysql -u {$dbConfig['username']} -p{$dbConfig['password']} -P {$dbConfig['port']} ";
+        $cmd .= "{$dbConfig['database']} < " . self::SAKILA_DATA_SQL_PATH;
         $io->out('exec ' . $cmd);
         exec($cmd);
 
         $conn = ConnectionManager::get('default');
 
         // ビューとトリガー削除、トリガーによってのみ登録/更新/削除されるfilm_textテーブル削除
-        $view_names = ['actor_info', 'customer_list', 'film_list', 'nicer_but_slower_film_list', 'sales_by_film_category', 'sales_by_store', 'staff_list'];
-        foreach ($view_names as $view_name) {
-            $query = "DROP VIEW IF EXISTS {$view_name}";
+        $viewNames = [
+            'actor_info',
+            'customer_list',
+            'film_list',
+            'nicer_but_slower_film_list',
+            'sales_by_film_category',
+            'sales_by_store',
+            'staff_list',
+        ];
+        foreach ($viewNames as $viewName) {
+            $query = "DROP VIEW IF EXISTS {$viewName}";
             $io->out($query);
             $conn->execute($query);
         }
-        $trigger_names = ['ins_film', 'upd_film', 'del_film', 'rental_date', 'payment_date', 'customer_create_date'];
-        foreach ($trigger_names as $trigger_name) {
-            $query = "DROP TRIGGER IF EXISTS {$trigger_name}";
+        $triggerNames = ['ins_film', 'upd_film', 'del_film', 'rental_date', 'payment_date', 'customer_create_date'];
+        foreach ($triggerNames as $triggerName) {
+            $query = "DROP TRIGGER IF EXISTS {$triggerName}";
             $io->out($query);
             $conn->execute($query);
         }
@@ -110,16 +120,16 @@ class ImportDatabaseCommand extends Command
             'staff' => ['fk_staff_address', 'fk_staff_store'],
             'store' => ['fk_store_address', 'fk_store_staff'],
         ];
-        foreach ($foreign_constraints as $table_name => $constraints) {
+        foreach ($foreign_constraints as $tableName => $constraints) {
             foreach ($constraints as $constraint) {
-                $query = "ALTER TABLE {$table_name} DROP FOREIGN KEY {$constraint}";
+                $query = "ALTER TABLE {$tableName} DROP FOREIGN KEY {$constraint}";
                 $io->out($query);
                 $conn->execute($query);
             }
         }
 
         // 各テーブルのプライマリキーのカラム名を「id」に変更
-        $rename_columns = [
+        $renameColumns = [
             'actor' => 'actor_id',
             'address' => 'address_id',
             'category' => 'category_id',
@@ -134,8 +144,8 @@ class ImportDatabaseCommand extends Command
             'staff' => 'staff_id',
             'store' => 'store_id',
         ];
-        foreach ($rename_columns as $table_name => $rename_column) {
-            $query = "ALTER TABLE {$table_name} CHANGE {$rename_column} id int(11) NOT NULL AUTO_INCREMENT";
+        foreach ($renameColumns as $tableName => $renameColumn) {
+            $query = "ALTER TABLE {$tableName} CHANGE {$renameColumn} id int(11) NOT NULL AUTO_INCREMENT";
             $io->out($query);
             $conn->execute($query);
         }
@@ -144,25 +154,30 @@ class ImportDatabaseCommand extends Command
         // 「id」カラムを追加
         // 連番付与
         // プライマリキー設定とオートインクリメント設定
-        foreach (['film_actor', 'film_category'] as $table_name) {
-            $query = "ALTER TABLE {$table_name} DROP PRIMARY KEY";
+        foreach (['film_actor', 'film_category'] as $tableName) {
+            $query = "ALTER TABLE {$tableName} DROP PRIMARY KEY";
             $io->out($query);
             $conn->execute($query);
-            $query = "ALTER TABLE {$table_name} ADD COLUMN id int(11) NOT NULL FIRST";
+            $query = "ALTER TABLE {$tableName} ADD COLUMN id int(11) NOT NULL FIRST";
             $io->out($query);
             $conn->execute($query);
-            $query = "SET @CNT:=0; UPDATE {$table_name} SET id = (@CNT := @CNT + 1 )";
+            $query = "SET @CNT:=0; UPDATE {$tableName} SET id = (@CNT := @CNT + 1 )";
             $io->out($query);
             $conn->execute($query);
-            $query = "ALTER TABLE {$table_name} ADD PRIMARY KEY (id)";
+            $query = "ALTER TABLE {$tableName} ADD PRIMARY KEY (id)";
             $io->out($query);
             $conn->execute($query);
-            $query = "ALTER TABLE {$table_name} CHANGE id id int(11) NOT NULL AUTO_INCREMENT";
+            $query = "ALTER TABLE {$tableName} CHANGE id id int(11) NOT NULL AUTO_INCREMENT";
             $io->out($query);
             $conn->execute($query);
         }
 
-        $results = $conn->execute('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?', [$db_config['database']])->fetchAll('assoc');
+        $results = $conn->execute(
+            'SELECT tableName FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
+            [
+                $dbConfig['database'],
+            ]
+        )->fetchAll('assoc');
         debug($results);
     }
 }
