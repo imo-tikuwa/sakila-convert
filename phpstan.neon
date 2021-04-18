@@ -6,3 +6,5 @@ parameters:
         - src
     excludes_analyse:
         - src/Console/Installer.php
+    bootstrapFiles:
+        - config/bootstrap.php

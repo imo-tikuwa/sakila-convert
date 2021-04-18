@@ -10,11 +10,6 @@ use Cake\Console\ConsoleOptionParser;
 use Cake\Datasource\ConnectionManager;
 use ZipArchive;
 
-/** tmpディレクトリのパス(phpstanでpaths.phpに設定されてるTMPが参照できず、エラー吐かれるので別途定義) */
-if (!defined('TMP')) {
-    define('TMP', dirname(__DIR__, 2) . DS . 'tmp' . DS);
-}
-
 /**
  * ImportDatabase command.
  * sakilaデータベースをCakePHP4で使用するのに良さそうな形に整形する
@@ -103,7 +98,14 @@ class ImportDatabaseCommand extends Command
             $io->out($query);
             $conn->execute($query);
         }
-        $triggerNames = ['ins_film', 'upd_film', 'del_film', 'rental_date', 'payment_date', 'customer_create_date'];
+        $triggerNames = [
+            'ins_film',
+            'upd_film',
+            'del_film',
+            'rental_date',
+            'payment_date',
+            'customer_create_date',
+        ];
         foreach ($triggerNames as $triggerName) {
             $query = "DROP TRIGGER IF EXISTS {$triggerName}";
             $io->out($query);
