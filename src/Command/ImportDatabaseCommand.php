@@ -10,6 +10,11 @@ use Cake\Console\ConsoleOptionParser;
 use Cake\Datasource\ConnectionManager;
 use ZipArchive;
 
+/** tmpディレクトリのパス(phpstanでpaths.phpに設定されてるTMPが参照できず、エラー吐かれるので別途定義) */
+if (!defined('TMP')) {
+    define('TMP', dirname(__DIR__, 2) . DS . 'tmp' . DS);
+}
+
 /**
  * ImportDatabase command.
  * sakilaデータベースをCakePHP4で使用するのに良さそうな形に整形する
@@ -173,11 +178,10 @@ class ImportDatabaseCommand extends Command
         }
 
         $results = $conn->execute(
-            'SELECT tableName FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
+            'SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
             [
                 $dbConfig['database'],
             ]
         )->fetchAll('assoc');
-        debug($results);
     }
 }
