@@ -8,6 +8,7 @@ use Cake\Console\Arguments;
 use Cake\Console\ConsoleIo;
 use Cake\Console\ConsoleOptionParser;
 use Cake\Datasource\ConnectionManager;
+use Cake\Utility\Inflector;
 use ZipArchive;
 
 /**
@@ -72,12 +73,10 @@ class ImportDatabaseCommand extends Command
 
         // MySQLDBにインポート
         $dbConfig = ConnectionManager::getConfig('default');
-        $cmd = "mysql -u {$dbConfig['username']} -p{$dbConfig['password']} -P {$dbConfig['port']} ";
-        $cmd .= "{$dbConfig['database']} < " . self::SAKILA_SCHEMA_SQL_PATH;
+        $cmd = "mysql -u {$dbConfig['username']} -p{$dbConfig['password']} -P {$dbConfig['port']} {$dbConfig['database']} < " . self::SAKILA_SCHEMA_SQL_PATH;
         $io->out('exec ' . $cmd);
         exec($cmd);
-        $cmd = "mysql -u {$dbConfig['username']} -p{$dbConfig['password']} -P {$dbConfig['port']} ";
-        $cmd .= "{$dbConfig['database']} < " . self::SAKILA_DATA_SQL_PATH;
+        $cmd = "mysql -u {$dbConfig['username']} -p{$dbConfig['password']} -P {$dbConfig['port']} {$dbConfig['database']} < " . self::SAKILA_DATA_SQL_PATH;
         $io->out('exec ' . $cmd);
         exec($cmd);
 
@@ -168,13 +167,125 @@ class ImportDatabaseCommand extends Command
             $query = "ALTER TABLE {$tableName} ADD COLUMN id int(11) NOT NULL FIRST";
             $io->out($query);
             $conn->execute($query);
-            $query = "SET @CNT:=0; UPDATE {$tableName} SET id = (@CNT := @CNT + 1 )";
+            $query = "SET @CNT:=0; UPDATE {$tableName} SET id = (@CNT := @CNT + 1)";
             $io->out($query);
             $conn->execute($query);
             $query = "ALTER TABLE {$tableName} ADD PRIMARY KEY (id)";
             $io->out($query);
             $conn->execute($query);
             $query = "ALTER TABLE {$tableName} CHANGE id id int(11) NOT NULL AUTO_INCREMENT";
+            $io->out($query);
+            $conn->execute($query);
+        }
+
+        // last_updateカラムをmodifiedカラムにリネーム
+        $lastUpdateRenameTables = [
+            'actor',
+            'address',
+            'category',
+            'city',
+            'country',
+            'customer',
+            'film',
+            'film_actor',
+            'film_category',
+            'inventory',
+            'language',
+            'payment',
+            'rental',
+            'staff',
+            'store',
+        ];
+        foreach ($lastUpdateRenameTables as $tableName) {
+            $query = "ALTER TABLE {$tableName} CHANGE last_update modified datetime DEFAULT NULL COMMENT '更新日時'";
+            $io->out($query);
+            $conn->execute($query);
+        }
+
+        // createdカラム追加ネーム(customerテーブルのみcreate_dateカラムをリネーム)
+        $createdAppendTables = [
+            'actor' => 'last_name',
+            'address' => 'location',
+            'category' => 'name',
+            'city' => 'country_id',
+            'country' => 'country',
+            'film' => 'special_features',
+            'film_actor' => 'film_id',
+            'film_category' => 'category_id',
+            'inventory' => 'store_id',
+            'language' => 'name',
+            'payment' => 'payment_date',
+            'rental' => 'staff_id',
+            'staff' => 'password',
+            'store' => 'address_id',
+        ];
+        foreach ($createdAppendTables as $tableName => $insertBeforeColumn) {
+            $query = "ALTER TABLE {$tableName} ADD COLUMN created datetime DEFAULT NULL COMMENT '作成日時' AFTER {$insertBeforeColumn}";
+            $io->out($query);
+            $conn->execute($query);
+            $query = "UPDATE {$tableName} SET created = modified";
+            $io->out($query);
+            $conn->execute($query);
+        }
+        $query = "ALTER TABLE customer CHANGE create_date created datetime DEFAULT NULL COMMENT '作成日時'";
+        $io->out($query);
+        $conn->execute($query);
+        $query = 'UPDATE customer SET created = modified';
+        $io->out($query);
+        $conn->execute($query);
+
+        // enumをコード値に変換
+        $enumToCodeMappings = [
+            'film' => [
+                [
+                    'column' => 'rating',
+                    'codes' => [
+                        'G' => '01',
+                        'PG' => '02',
+                        'PG-13' => '03',
+                        'R' => '04',
+                        'NC-17' => '05',
+                    ],
+                ],
+            ],
+        ];
+        foreach ($enumToCodeMappings as $tableName => $mappings) {
+            foreach ($mappings as $mapping) {
+                $query = "ALTER TABLE {$tableName} CHANGE {$mapping['column']} {$mapping['column']} varchar(255)";
+                $io->out($query);
+                $conn->execute($query);
+                foreach ($mapping['codes'] as $enumVal => $codeVal) {
+                    $query = "UPDATE {$tableName} SET {$mapping['column']} = '{$codeVal}' WHERE {$mapping['column']} = '{$enumVal}'";
+                    $io->out($query);
+                    $conn->execute($query);
+                }
+                $query = "ALTER TABLE {$tableName} CHANGE {$mapping['column']} {$mapping['column']} char(2) DEFAULT NULL";
+                $io->out($query);
+                $conn->execute($query);
+            }
+        }
+
+        // テーブル名を複数形に変換
+        $tableNames = [
+            'actor',
+            'address',
+            'category',
+            'city',
+            'country',
+            'customer',
+            'film',
+            'film_actor',
+            'film_category',
+            'inventory',
+            'language',
+            'payment',
+            'rental',
+            'staff',
+            'store',
+        ];
+        foreach ($tableNames as $tableName) {
+            $newTableName = Inflector::tableize($tableName);
+            $query = "RENAME TABLE {$tableName} TO {$newTableName}";
             $io->out($query);
             $conn->execute($query);
         }

@@ -3,4 +3,11 @@
     <config name="installed_paths" value="../../cakephp/cakephp-codesniffer"/>
 
     <rule ref="CakePHP"/>
+
+    <rule ref="Generic.Files.LineLength">
+        <properties>
+            <property name="lineLimit" value="200"/>
+            <property name="absoluteLineLimit" value="200"/>
+        </properties>
+    </rule>
 </ruleset>
