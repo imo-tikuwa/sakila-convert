@@ -51,7 +51,13 @@ class ImportDatabaseCommand extends Command
         if (!file_exists(self::SAKILA_ZIP_PATH)) {
             $io->out('Download sakila-db.zip');
             $file = file_get_contents('http://downloads.mysql.com/docs/sakila-db.zip');
-            file_put_contents(self::SAKILA_ZIP_PATH, $file);
+            if (is_string($file)) {
+                $io->level(ConsoleIo::QUIET);
+                $io->createFile(self::SAKILA_ZIP_PATH, $file, true);
+                $io->level(ConsoleIo::NORMAL);
+            } else {
+                $io->abort('Download error.');
+            }
         }
 
         // 展開
@@ -135,6 +141,7 @@ class ImportDatabaseCommand extends Command
         }
 
         // 各テーブルのプライマリキーのカラム名を「id」に変更
+        // コメント句に「ID」と設定
         $renameColumns = [
             'actor' => 'actor_id',
             'address' => 'address_id',
@@ -151,7 +158,7 @@ class ImportDatabaseCommand extends Command
             'store' => 'store_id',
         ];
         foreach ($renameColumns as $tableName => $renameColumn) {
-            $query = "ALTER TABLE {$tableName} CHANGE {$renameColumn} id int(11) NOT NULL AUTO_INCREMENT";
+            $query = "ALTER TABLE {$tableName} CHANGE {$renameColumn} id int(11) NOT NULL COMMENT 'ID' AUTO_INCREMENT";
             $io->out($query);
             $conn->execute($query);
         }
@@ -159,6 +166,7 @@ class ImportDatabaseCommand extends Command
         // 複合プライマリキーを削除
         // 「id」カラムを追加
         // 連番付与
+        // コメント句に「ID」と設定
         // プライマリキー設定とオートインクリメント設定
         foreach (['film_actor', 'film_category'] as $tableName) {
             $query = "ALTER TABLE {$tableName} DROP PRIMARY KEY";
@@ -173,7 +181,7 @@ class ImportDatabaseCommand extends Command
             $query = "ALTER TABLE {$tableName} ADD PRIMARY KEY (id)";
             $io->out($query);
             $conn->execute($query);
-            $query = "ALTER TABLE {$tableName} CHANGE id id int(11) NOT NULL AUTO_INCREMENT";
+            $query = "ALTER TABLE {$tableName} CHANGE id id int(11) NOT NULL COMMENT 'ID' AUTO_INCREMENT";
             $io->out($query);
             $conn->execute($query);
         }
@@ -265,7 +273,7 @@ class ImportDatabaseCommand extends Command
             }
         }
 
-        // テーブル名を複数形に変換
+        // テーブル名を複数形に変換、コメント設定
         $tableNames = [
             'actor',
             'address',
@@ -288,13 +296,106 @@ class ImportDatabaseCommand extends Command
             $query = "RENAME TABLE {$tableName} TO {$newTableName}";
             $io->out($query);
             $conn->execute($query);
+            $query = "ALTER TABLE {$newTableName} COMMENT '{$newTableName}'";
+            $io->out($query);
+            $conn->execute($query);
         }
 
+        // addressesテーブルのlocationカラムの型をgeometry→jsonに変換
+        // geometry型のlocationカラムをgeometry_locationにリネーム
+        // json型のlocationカラム追加
+        // geometry型のデータから緯度経度を抜き出してjsonカラムを更新
+        // geometry型の方のカラムは削除
+        $query = 'ALTER TABLE addresses CHANGE COLUMN location geometry_location geometry NOT NULL';
+        $io->out($query);
+        $conn->execute($query);
+        $query = 'ALTER TABLE addresses ADD COLUMN location json DEFAULT NULL AFTER geometry_location';
+        $io->out($query);
+        $conn->execute($query);
+        $query = 'SELECT id, ST_AsText(geometry_location) AS location FROM addresses';
+        $io->out($query);
+        $locations = $conn->execute($query)->fetchAll('assoc');
+        if (is_array($locations)) {
+            foreach ($locations as $location) {
+                if (preg_match("/^POINT\((.+) (.+)\)$/", $location['location'], $matches)) {
+                    $json = json_encode([
+                        'zoom' => 13,
+                        'latitude' => round(floatval($matches[2]), 6),
+                        'longitude' => round(floatval($matches[1]), 6),
+                    ]);
+                    $query = "UPDATE addresses SET location = '{$json}' WHERE id = {$location['id']}";
+                    $io->out($query);
+                    $conn->execute($query);
+                }
+            }
+        }
+        $query = 'ALTER TABLE addresses DROP COLUMN geometry_location';
+        $io->out($query);
+        $conn->execute($query);
+
+        // staffsテーブルのpictureカラムの型をblob→jsonに変換
+        // blob型のpictureカラムをblob_pictureにリネーム
+        // json型のpictureカラム追加
+        // blob型のデータから画像データを抜き出してwebroot以下のディレクトリにファイルとして保存
+        // blob型の方のカラムは削除
+        $query = 'ALTER TABLE staffs CHANGE COLUMN picture blob_picture blob';
+        $io->out($query);
+        $conn->execute($query);
+        $query = 'ALTER TABLE staffs ADD COLUMN picture json DEFAULT NULL AFTER blob_picture';
+        $io->out($query);
+        $conn->execute($query);
+        $query = 'SELECT id, blob_picture FROM staffs';
+        $io->out($query);
+        $pictures = $conn->execute($query)->fetchAll('assoc');
+        $picture_save_dir = WWW_ROOT . 'upload_files' . DS . 'staffs' . DS;
+        if (is_array($pictures)) {
+            foreach ($pictures as $picture) {
+                if (!is_null($picture['blob_picture'])) {
+                    $filename = sha1($picture['id']) . '.png';
+                    $picture_save_path = $picture_save_dir . $filename;
+                    $io->level(ConsoleIo::QUIET);
+                    $io->createFile($picture_save_path, $picture['blob_picture'], true);
+                    $io->level(ConsoleIo::NORMAL);
+                    if (!file_exists($picture_save_path)) {
+                        $io->abort('Blob convert failed.');
+                    }
+                    $json = json_encode([
+                        'key' => $filename,
+                        'size' => filesize($picture_save_path),
+                        'cur_name' => $filename,
+                        'org_name' => "{$picture['id']}.png",
+                        'delete_url' => '/admin/staffs/file-delete/picture_file',
+                    ]);
+                    $query = "UPDATE staffs SET picture = '{$json}' WHERE id = {$picture['id']}";
+                    $io->out($query);
+                    $conn->execute($query);
+                }
+            }
+        }
+        $query = 'ALTER TABLE staffs DROP COLUMN blob_picture';
+        $io->out($query);
+        $conn->execute($query);
+
+        // filmsテーブルのspecial_featuresカラムの型をset→varcharに変換
+        $query = 'ALTER TABLE films CHANGE COLUMN special_features special_features varchar(255) DEFAULT NULL';
+        $io->out($query);
+        $conn->execute($query);
+
+        // すべてのカラムのコメント句について設定
+        $query = "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS WHERE COLUMN_NAME NOT IN ('id', 'created', 'modified') AND TABLE_SCHEMA = ?";
+        $io->out($query);
         $results = $conn->execute(
-            'SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
+            $query,
             [
                 $dbConfig['database'],
             ]
         )->fetchAll('assoc');
+        if (is_array($results)) {
+            foreach ($results as $result) {
+                $query = "ALTER TABLE {$result['TABLE_NAME']} CHANGE COLUMN {$result['COLUMN_NAME']} {$result['COLUMN_NAME']} {$result['COLUMN_TYPE']} DEFAULT NULL COMMENT '{$result['COLUMN_NAME']}'";
+                $io->out($query);
+                $conn->execute($query);
+            }
+        }
     }
 }
