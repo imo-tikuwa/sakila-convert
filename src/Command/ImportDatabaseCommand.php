@@ -273,6 +273,26 @@ class ImportDatabaseCommand extends Command
             }
         }
 
+        // 論理削除フラグ付与(actor、country、language、storeは削除機能なし)
+        $deletableTables = [
+            'address',
+            'category',
+            'city',
+            'customer',
+            'film',
+            'film_actor',
+            'film_category',
+            'inventory',
+            'payment',
+            'rental',
+            'staff',
+        ];
+        foreach ($deletableTables as $tableName) {
+            $query = "ALTER TABLE {$tableName} ADD COLUMN deleted datetime DEFAULT NULL COMMENT '削除日時' AFTER modified";
+            $io->out($query);
+            $conn->execute($query);
+        }
+
         // テーブル名を複数形に変換、コメント設定
         $tableNames = [
             'actor',
@@ -377,12 +397,22 @@ class ImportDatabaseCommand extends Command
         $conn->execute($query);
 
         // filmsテーブルのspecial_featuresカラムの型をset→varcharに変換
-        $query = 'ALTER TABLE films CHANGE COLUMN special_features special_features varchar(255) DEFAULT NULL';
+        $query = 'ALTER TABLE films CHANGE COLUMN special_features special_features text DEFAULT NULL';
+        $io->out($query);
+        $conn->execute($query);
+
+        // その他
+        // 要素不明かつデータがすべてnullなfilmsテーブルのoriginal_language_idカラムを削除
+        $query = 'ALTER TABLE films DROP COLUMN original_language_id';
+        $io->out($query);
+        $conn->execute($query);
+        // storesテーブル内のstaffsテーブルに対しての外部キーについてカラム名をmanager_staff_id→staff_idに変更
+        $query = 'ALTER TABLE stores CHANGE COLUMN manager_staff_id staff_id int(11) DEFAULT NULL';
         $io->out($query);
         $conn->execute($query);
 
         // すべてのカラムのコメント句について設定
-        $query = "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS WHERE COLUMN_NAME NOT IN ('id', 'created', 'modified') AND TABLE_SCHEMA = ?";
+        $query = "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS WHERE COLUMN_NAME NOT IN ('id', 'created', 'modified', 'deleted') AND TABLE_SCHEMA = ?";
         $io->out($query);
         $results = $conn->execute(
             $query,
