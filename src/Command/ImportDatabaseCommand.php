@@ -293,6 +293,34 @@ class ImportDatabaseCommand extends Command
             $conn->execute($query);
         }
 
+        // filmテーブルと同時にデータ登録を行うテーブル（）についてカラムの順番とレコードを並び替える
+        // film_idをidカラムの後ろに移動
+        // film_idの昇順で取得したデータを元にテーブルのデータを入れなおす
+        $filmSortTables = [
+            'film_actor' => 'actor_id',
+            'film_category' => 'category_id',
+        ];
+        foreach ($filmSortTables as $tableName => $foreignColumn) {
+            $query = "ALTER TABLE {$tableName} MODIFY COLUMN film_id int(11) DEFAULT NULL AFTER id";
+            $io->out($query);
+            $conn->execute($query);
+            $query = "SELECT * FROM {$tableName} ORDER BY film_id, {$foreignColumn}";
+            $io->out($query);
+            $records = $conn->execute($query)->fetchAll('assoc');
+            $query = "TRUNCATE TABLE {$tableName}";
+            $io->out($query);
+            $conn->execute($query);
+            $query = "INSERT INTO {$tableName}(id, film_id, {$foreignColumn}, created, modified) VALUES";
+            $queryRecords = [];
+            foreach ($records as $index => $record) {
+                $id = $index + 1;
+                $queryRecords[] = "({$id}, {$record['film_id']}, {$record[$foreignColumn]}, '{$record['created']}', '{$record['modified']}')";
+            }
+            $query .= implode(',', $queryRecords);
+            $io->out($query);
+            $conn->execute($query);
+        }
+
         // テーブル名を複数形に変換、コメント設定
         $tableNames = [
             'actor',
