@@ -317,7 +317,6 @@ class ImportDatabaseCommand extends Command
                 $queryRecords[] = "({$id}, {$record['film_id']}, {$record[$foreignColumn]}, '{$record['created']}', '{$record['modified']}')";
             }
             $query .= implode(',', $queryRecords);
-            $io->out($query);
             $conn->execute($query);
         }
 
