@@ -164,12 +164,16 @@ class ImportDatabaseCommand extends Command
         }
 
         // 複合プライマリキーを削除
+        // last_updateカラムの型をdatetimeに変更(UPDATEで更新日時が変わるのを防ぐ)
         // 「id」カラムを追加
         // 連番付与
         // コメント句に「ID」と設定
         // プライマリキー設定とオートインクリメント設定
         foreach (['film_actor', 'film_category'] as $tableName) {
             $query = "ALTER TABLE {$tableName} DROP PRIMARY KEY";
+            $io->out($query);
+            $conn->execute($query);
+            $query = "ALTER TABLE {$tableName} MODIFY COLUMN last_update datetime DEFAULT NULL";
             $io->out($query);
             $conn->execute($query);
             $query = "ALTER TABLE {$tableName} ADD COLUMN id int(11) NOT NULL FIRST";
@@ -210,7 +214,7 @@ class ImportDatabaseCommand extends Command
             $conn->execute($query);
         }
 
-        // createdカラム追加ネーム(customerテーブルのみcreate_dateカラムをリネーム)
+        // createdカラム追加(customerテーブルのみcreate_dateカラムをリネーム)
         $createdAppendTables = [
             'actor' => 'last_name',
             'address' => 'location',
@@ -241,6 +245,34 @@ class ImportDatabaseCommand extends Command
         $query = 'UPDATE customer SET created = modified';
         $io->out($query);
         $conn->execute($query);
+
+        // filmテーブルと同時にデータ登録を行うテーブル（film_actor、film_category）についてカラムの順番とレコードを並び替える
+        // film_idをidカラムの後ろに移動
+        // film_idの昇順で取得したデータを元にテーブルのデータを入れなおす
+        $filmSortTables = [
+            'film_actor' => 'actor_id',
+            'film_category' => 'category_id',
+        ];
+        foreach ($filmSortTables as $tableName => $foreignColumn) {
+            $query = "ALTER TABLE {$tableName} MODIFY COLUMN film_id int(11) DEFAULT NULL AFTER id";
+            $io->out($query);
+            $conn->execute($query);
+            $query = "SELECT * FROM {$tableName} ORDER BY film_id, {$foreignColumn}";
+            $io->out($query);
+            $records = $conn->execute($query)->fetchAll('assoc');
+            $query = "TRUNCATE TABLE {$tableName}";
+            $io->out($query);
+            $conn->execute($query);
+            $query = "INSERT INTO {$tableName}(id, film_id, {$foreignColumn}, created, modified) VALUES";
+            $queryRecords = [];
+            foreach ($records as $index => $record) {
+                $id = $index + 1;
+                $queryRecords[] = "({$id}, {$record['film_id']}, {$record[$foreignColumn]}, '{$record['created']}', '{$record['modified']}')";
+            }
+            $query .= implode(',', $queryRecords);
+            $io->out($query);
+            $conn->execute($query);
+        }
 
         // enumをコード値に変換
         $enumToCodeMappings = [
@@ -290,33 +322,6 @@ class ImportDatabaseCommand extends Command
         foreach ($deletableTables as $tableName) {
             $query = "ALTER TABLE {$tableName} ADD COLUMN deleted datetime DEFAULT NULL COMMENT '削除日時' AFTER modified";
             $io->out($query);
-            $conn->execute($query);
-        }
-
-        // filmテーブルと同時にデータ登録を行うテーブル（）についてカラムの順番とレコードを並び替える
-        // film_idをidカラムの後ろに移動
-        // film_idの昇順で取得したデータを元にテーブルのデータを入れなおす
-        $filmSortTables = [
-            'film_actor' => 'actor_id',
-            'film_category' => 'category_id',
-        ];
-        foreach ($filmSortTables as $tableName => $foreignColumn) {
-            $query = "ALTER TABLE {$tableName} MODIFY COLUMN film_id int(11) DEFAULT NULL AFTER id";
-            $io->out($query);
-            $conn->execute($query);
-            $query = "SELECT * FROM {$tableName} ORDER BY film_id, {$foreignColumn}";
-            $io->out($query);
-            $records = $conn->execute($query)->fetchAll('assoc');
-            $query = "TRUNCATE TABLE {$tableName}";
-            $io->out($query);
-            $conn->execute($query);
-            $query = "INSERT INTO {$tableName}(id, film_id, {$foreignColumn}, created, modified) VALUES";
-            $queryRecords = [];
-            foreach ($records as $index => $record) {
-                $id = $index + 1;
-                $queryRecords[] = "({$id}, {$record['film_id']}, {$record[$foreignColumn]}, '{$record['created']}', '{$record['modified']}')";
-            }
-            $query .= implode(',', $queryRecords);
             $conn->execute($query);
         }
 
