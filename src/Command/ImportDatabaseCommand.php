@@ -265,9 +265,11 @@ class ImportDatabaseCommand extends Command
             $conn->execute($query);
             $query = "INSERT INTO {$tableName}(id, film_id, {$foreignColumn}, created, modified) VALUES";
             $queryRecords = [];
-            foreach ($records as $index => $record) {
-                $id = $index + 1;
-                $queryRecords[] = "({$id}, {$record['film_id']}, {$record[$foreignColumn]}, '{$record['created']}', '{$record['modified']}')";
+            if (is_array($records)) {
+                foreach ($records as $index => $record) {
+                    $id = $index + 1;
+                    $queryRecords[] = "({$id}, {$record['film_id']}, {$record[$foreignColumn]}, '{$record['created']}', '{$record['modified']}')";
+                }
             }
             $query .= implode(',', $queryRecords);
             $io->out($query);
@@ -412,11 +414,13 @@ class ImportDatabaseCommand extends Command
                         $io->abort('Blob convert failed.');
                     }
                     $json = json_encode([
-                        'key' => $filename,
-                        'size' => filesize($picture_save_path),
-                        'cur_name' => $filename,
-                        'org_name' => "{$picture['id']}.png",
-                        'delete_url' => '/admin/staffs/file-delete/picture_file',
+                        [
+                            'key' => $filename,
+                            'size' => filesize($picture_save_path),
+                            'cur_name' => $filename,
+                            'org_name' => "{$picture['id']}.png",
+                            'delete_url' => '/admin/staffs/file-delete/picture_file',
+                        ],
                     ]);
                     $query = "UPDATE staffs SET picture = '{$json}' WHERE id = {$picture['id']}";
                     $io->out($query);
