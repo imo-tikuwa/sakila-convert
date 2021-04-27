@@ -442,10 +442,6 @@ class ImportDatabaseCommand extends Command
         $query = 'ALTER TABLE films DROP COLUMN original_language_id';
         $io->out($query);
         $conn->execute($query);
-        // storesテーブル内のstaffsテーブルに対しての外部キーについてカラム名をmanager_staff_id→staff_idに変更
-        $query = 'ALTER TABLE stores CHANGE COLUMN manager_staff_id staff_id int(11) DEFAULT NULL';
-        $io->out($query);
-        $conn->execute($query);
 
         // すべてのカラムのコメント句について設定
         $query = "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS WHERE COLUMN_NAME NOT IN ('id', 'created', 'modified', 'deleted') AND TABLE_SCHEMA = ?";
